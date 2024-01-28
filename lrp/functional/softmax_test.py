@@ -1,0 +1,19 @@
+import pytest
+import torch
+
+from lrp.functional.softmax import SoftmaxAlpha1Beta0
+
+def test_lrp_softmax_alpha_beta():
+
+    in_features = 2
+
+    batch_size = 1
+    in_tensor = torch.rand([batch_size, in_features], requires_grad=True)
+
+    result = SoftmaxAlpha1Beta0.apply(in_tensor, -1)
+
+    loss = result.mean()
+    loss.backward()
+
+    print("in_tensor.grad", in_tensor.grad)
+

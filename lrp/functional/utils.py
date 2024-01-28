@@ -35,3 +35,25 @@ def normalize(x):
     x = x.clamp(-1, 1)
 
     return x
+
+
+def alpha_beta_on_z_ij(alpha, beta, z_ij):
+    # z_{ij} [ bs, out_features, in_features ]
+
+    # [ bs, out_features, in_features ]
+    z_ij_positive = torch.max(z_ij, torch.zeros_like(z_ij))
+    z_ij_negative = torch.min(z_ij, torch.zeros_like(z_ij))
+
+    # [ bs, 1, in_features ]
+    z_j_positive_sum = z_ij_positive.sum(dim=-1, keepdim=True) + 1e-6
+    z_j_negative_sum = z_ij_negative.sum(dim=-1, keepdim=True) + 1e-6
+
+    # [ bs, out_features, in_features ]
+    positive_relevance = z_ij_positive / z_j_positive_sum
+    negative_relevance = z_ij_negative / z_j_negative_sum
+
+    # [ bs, out_features, in_features ]
+    total_relevance = alpha * positive_relevance + beta * negative_relevance
+
+    return total_relevance
+
