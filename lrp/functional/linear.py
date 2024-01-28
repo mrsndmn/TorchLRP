@@ -59,38 +59,109 @@ def _forward_alpha_beta(ctx, input, weight, bias):
     ctx.save_for_backward(input, weight, bias)
     return Z
 
+def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
+    input, weights, bias = ctx.saved_tensors
+
+    # weights          ~ [ out_features, in_features ]
+    # bias             ~ [ out_features ]
+    # input            ~ [ bs, in_features ]
+    # relevance_output ~ [ bs, out_features ]
+
+
+    batch_size, in_features = input.shape[0], input.shape[1]
+    out_features = weights.shape[0]
+
+    assert relevance_output.shape == torch.Size([batch_size, out_features]), f"relevance_output.shape={relevance_output.shape}"
+
+    input_unsqueezed = input.unsqueeze(-1) # [ *, in, 1 ]
+    assert input_unsqueezed.shape[-1] == 1, f'input_unsqueezed.shape {input_unsqueezed.shape}'
+    input_unsqueezed_repeated = input_unsqueezed.repeat(1, 1, out_features) # [ bs, input_features, out_features ]
+
+    weights_unsqueezed = weights.unsqueeze(0) # [ 1, out_features, in_features ]
+    weights_unsqueezed_permuted = weights_unsqueezed.permute(0, 2, 1) # [ 1, in_features, out_features ]
+    z_ij = input_unsqueezed_repeated * weights_unsqueezed_permuted # [ bs, in_features, out_features ]
+    z_ij = z_ij.permute(0, 2, 1) # [ bs, out_features, in_features ]
+
+    assert z_ij.shape == torch.Size([batch_size, out_features, in_features]), f"z_ij.shape {z_ij.shape}"
+
+    # [ bs, out_features, in_features ]
+    z_ij_positive = torch.max(z_ij, torch.zeros_like(z_ij))
+    z_ij_negative = torch.min(z_ij, torch.zeros_like(z_ij))
+
+    # [ bs, 1, in_features ]
+    z_j_positive_sum = z_ij_positive.sum(dim=-1, keepdim=True) + 1e-6
+    z_j_negative_sum = z_ij_negative.sum(dim=-1, keepdim=True) + 1e-6
+
+    # [ bs, out_features, in_features ]
+    positive_relevance = z_ij_positive / z_j_positive_sum
+    negative_relevance = z_ij_negative / z_j_negative_sum
+
+    # [ bs, out_features, in_features ]
+    total_relevance = alpha * positive_relevance + beta * negative_relevance
+
+    # relevance_output.unsqueeze(1) ~ [ bs, 1, out_features ]
+    relevance_input = torch.bmm(relevance_output.unsqueeze(1), total_relevance) # [ bs, 1, in_features ]
+
+    relevance_input = relevance_input.squeeze(1)
+
+    assert relevance_input.shape == input.shape, f"{relevance_input.shape} == {input.shape}"
+
+    trace.do_trace(relevance_input)
+    return relevance_input, None, None
+
+
+
 def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     """
         Inspired by https://github.com/albermax/innvestigate/blob/1ed38a377262236981090bb0989d2e1a6892a0b1/innvestigate/analyzer/relevance_based/relevance_rule.py#L270
     """
     input, weights, bias = ctx.saved_tensors
+
+    # weights ~ [ in_features, out_features ]
+    # bias    ~ [ out_features ]
+    # input   ~ [*, input_features]
+    # Z       ~ [ *, out_features ]
+
     sel = weights > 0
     zeros = torch.zeros_like(weights)
-
     weights_pos       = torch.where(sel,  weights, zeros)
     weights_neg       = torch.where(~sel, weights, zeros)
 
     input_pos         = torch.where(input >  0, input, torch.zeros_like(input))
     input_neg         = torch.where(input <= 0, input, torch.zeros_like(input))
 
-    def f(X1, X2, W1, W2): 
+    def f(X1, X2, W1, W2, bias=None):
 
-        Z1  = F.linear(X1, W1, bias=None) 
+        Z1  = F.linear(X1, W1, bias=None)
         Z2  = F.linear(X2, W2, bias=None)
-        Z   = Z1 + Z2
+        Z   = Z1 + Z2 # Z_j^{+/-} # [ *, out_features ]
 
+        # По статье войты тут должно быть еще добавление bias
+        # Но такое добавление сломает правило нормы и релевантность не будет
+        # Константной
+
+        # R_j / Z_j^{+/-}
         rel_out = relevance_output / (Z + (Z==0).float()* 1e-6)
 
-        t1 = F.linear(rel_out, W1.t(), bias=None) 
+        # Осталось вычислить
+        # R_j / Z_j^{+/-} * Z_{ij}
+        #
+        # Сделаем это последовательно: Z_{ij} = W_{ij}.T @ X_i
+
+        t1 = F.linear(rel_out, W1.t(), bias=None)
         t2 = F.linear(rel_out, W2.t(), bias=None)
 
+        # R_j / Z_j^{+/-}
         r1  = t1 * X1
         r2  = t2 * X2
 
         return r1 + r2
 
+    # положительная релевантность для множителей с одинаковыми знаками
     pos_rel         = f(input_pos, input_neg, weights_pos, weights_neg)
+    # отрицательная релевантность для множителей с разными знаками
     neg_rel         = f(input_neg, input_pos, weights_pos, weights_neg)
+
     relevance_input = pos_rel * alpha - neg_rel * beta
 
     trace.do_trace(relevance_input)
@@ -104,6 +175,15 @@ class LinearAlpha1Beta0(Function):
     @staticmethod
     def backward(ctx, relevance_output):
         return _backward_alpha_beta(1., 0., ctx, relevance_output)
+
+class LinearAlpha1Beta0Explicit(Function):
+    @staticmethod
+    def forward(ctx, input, weight, bias=None):
+        return _forward_alpha_beta(ctx, input, weight, bias)
+
+    @staticmethod
+    def backward(ctx, relevance_output):
+        return _backward_alpha_beta_explicit(1., 0., ctx, relevance_output)
 
 
 class LinearAlpha2Beta1(Function):
