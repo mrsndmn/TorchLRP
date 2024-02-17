@@ -68,7 +68,7 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     # relevance_output ~ [ bs, out_features ]
 
     print("linear relevance_output", relevance_output.sum())
-    print("linear relevance_output value", relevance_output)
+    # print("linear relevance_output value", relevance_output)
 
     batch_size, in_features = input.shape[0], input.shape[1]
     out_features = weights.shape[0]

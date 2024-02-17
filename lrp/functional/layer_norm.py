@@ -68,8 +68,8 @@ class LayerNormAlpha1Beta0(Function):
     def backward(ctx, relevance_output):
         return _backward_alpha_beta(1.0, 0.0, ctx, relevance_output)
 
-softmax = {
-        "gradient":             F.linear,
+layer_norm = {
+        "gradient":             NotImplementedError,
         "epsilon":              NotImplementedError,
         "gamma":                NotImplementedError,
         "gamma+epsilon":        NotImplementedError,

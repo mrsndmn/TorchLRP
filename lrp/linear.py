@@ -2,12 +2,9 @@ import torch
 from .functional import linear
 
 class Linear(torch.nn.Linear):
-    def forward(self, input, rule="alpha1beta0", **kwargs):
-        p = kwargs.get('pattern')
-        if p is not None:
-            return linear[rule](input, self.weight, self.bias, p)
-        else:
-            return linear[rule](input, self.weight, self.bias)
+    def forward(self, input, *args, **kwargs):
+        rule = "alpha1beta0"
+        return linear[rule](input, self.weight, self.bias)
 
     @classmethod
     def from_torch(cls, lin):
