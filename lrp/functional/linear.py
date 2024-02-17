@@ -109,10 +109,11 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     assert relevance_input.shape == input.shape, f"{relevance_input.shape} == {input.shape}"
 
     # print("input", "min", input.min(), "max", input.max())
-    print("linear relevance_input", relevance_input.sum())
 
     if input_len_shape > 2:
         relevance_input = relevance_input.reshape(original_input_shape)
+
+    print("linear relevance_input", relevance_input.sum())
 
     trace.do_trace(relevance_input)
     return relevance_input, None, None

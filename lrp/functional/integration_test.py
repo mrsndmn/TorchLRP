@@ -1,4 +1,5 @@
 from copy import deepcopy
+from xml.dom.minidom import Identified
 import pytest
 import torch
 import torch.nn as nn
@@ -72,6 +73,7 @@ def lrp_modification_module(nn_module):
 
         return LRPBackwardNoopModule(nn_module)
     elif isinstance(nn_module, nn.Softmax):
+        # return nn.Identity
         return LRPSoftmax.from_torch(nn_module)
     elif isinstance(nn_module, nn.ModuleList):
         return nn.ModuleList([ lrp_modification_module(module_list_item) for module_list_item in nn_module ])
@@ -104,7 +106,41 @@ def convert_module(model):
 
     return
 
-def test_lrt_transformer_block():
+def test_lrp_attention():
+
+    from diffusers.models.attention_processor import Attention, AttnProcessor2_0
+
+    inner_dim = 30
+    attention = Attention(
+        query_dim=inner_dim,
+    )
+    attention.eval()
+    attention_original = deepcopy(attention)
+
+    print("attention", attention)
+
+    convert_module(attention)
+
+    hidden_states = torch.rand([1, 3, inner_dim], requires_grad=True) # [bs, seq_len, hidden_dim]
+    attention_out = attention.forward(hidden_states)
+    attention_original_out = attention_original.forward(hidden_states)
+
+    assert torch.allclose(attention_out, attention_original_out, atol=1e-6), 'blocks outputs are the same'
+
+    print("attention_out", attention_out.shape)
+
+    attention_out.backward( torch.ones_like(attention_out) / attention_out.numel() )
+
+    hidden_states_grad_sum = hidden_states.grad.sum()
+    print("hidden_states_grad_sum", hidden_states_grad_sum)
+
+    assert hidden_states_grad_sum == 1, 'hidden_states_grad_sum is 1'
+
+    return
+
+
+
+def test_lrp_transformer_block():
 
     from diffusers.models.attention import BasicTransformerBlock
 
@@ -114,6 +150,7 @@ def test_lrt_transformer_block():
         num_attention_heads=3,
         attention_head_dim=10,
     )
+    transformer_block.eval()
     transformer_block_original = deepcopy(transformer_block)
 
     print("transformer_block", transformer_block)

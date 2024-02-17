@@ -5,10 +5,11 @@ from lrp.functional.layer_norm import LayerNormAlpha1Beta0
 
 def test_lrp_layer_norm_alpha_beta():
 
-    in_features = 3
+    in_features = 10
+    num_heads = 7
 
-    batch_size = 2
-    in_tensor = torch.rand([batch_size, in_features], requires_grad=True)
+    batch_size = 3
+    in_tensor = torch.rand([batch_size, num_heads, in_features], requires_grad=True)
 
     normalized_shape = [in_features]
     weight = torch.rand(normalized_shape, requires_grad=True)
@@ -23,5 +24,5 @@ def test_lrp_layer_norm_alpha_beta():
 
     print("in_tensor.grad", in_tensor.grad)
     print("in_tensor.grad.sum", in_tensor.grad.sum())
-    assert torch.allclose(in_tensor.grad.sum(dim=-1), torch.ones([batch_size]), atol=1e-4), 'sum relevance is constant'
+    assert torch.allclose(in_tensor.grad.flatten(1).sum(dim=-1), torch.ones([batch_size]), atol=1e-4), 'sum relevance is constant'
 

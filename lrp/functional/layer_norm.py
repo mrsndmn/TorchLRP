@@ -80,7 +80,6 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
 
     print("layer norm relevance_input", relevance_input.sum())
 
-
     return relevance_input, None, None, None
 
 
