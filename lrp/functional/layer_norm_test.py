@@ -5,9 +5,9 @@ from lrp.functional.layer_norm import LayerNormAlpha1Beta0
 
 def test_lrp_layer_norm_alpha_beta():
 
-    in_features = 2
+    in_features = 3
 
-    batch_size = 1
+    batch_size = 2
     in_tensor = torch.rand([batch_size, in_features], requires_grad=True)
 
     normalized_shape = [in_features]

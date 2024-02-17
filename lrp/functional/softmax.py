@@ -20,6 +20,12 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     # [ bs, in_features ]
     input = ctx.saved_tensors[0]
 
+    batch_size, in_features = input.shape
+
+    # print("relevance_output", relevance_output.shape)
+    # print("input", input.shape)
+
+
     n = input.shape[ctx.dim] # number of input features
 
     # z_{ij} = 1/n * f( 0 ) +  df/dx(input)  * input
@@ -30,7 +36,8 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     # softmax_result = F.softmax(input=input, dim=ctx.dim) # [ bs, in_features ]
     # softmax_jacobian = torch.diag_embed(softmax_result) - torch.outer(softmax_result, softmax_result)
     softmax_jacobian = jacobian(softmax_module, input).squeeze(2)
-    # print("softmax_jacobian", softmax_jacobian.shape) # [ bs, in_features, in_features ]
+    print("softmax_jacobian", softmax_jacobian.shape) # [ bs, in_features, in_features ]
+    # assert softmax_jacobian.shape == torch.Size([batch_size, in_features, in_features]), 'softmax_jacobian shape is ok'
 
     # print("softmax_jacobian", softmax_jacobian)
     # print("input", input)
@@ -42,8 +49,6 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
 
     # print("total_relevance", total_relevance.shape)
     # print("total_relevance", total_relevance)
-    # print("relevance_output", relevance_output.shape)
-    # print("relevance_output", relevance_output)
 
     relevance_input = relevance_output * total_relevance
     relevance_input = relevance_input / relevance_input.sum(dim=-1)
@@ -51,6 +56,8 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     assert relevance_input.shape == input.shape, f"{relevance_input.shape} == {input.shape}"
 
     trace.do_trace(relevance_input)
+
+    print("softmax relevance sum", relevance_input.sum())
 
     return total_relevance, None
 

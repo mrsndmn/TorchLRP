@@ -67,6 +67,8 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     # input            ~ [ bs, in_features ]
     # relevance_output ~ [ bs, out_features ]
 
+    print("linear relevance_output", relevance_output.sum())
+    print("linear relevance_output value", relevance_output)
 
     batch_size, in_features = input.shape[0], input.shape[1]
     out_features = weights.shape[0]
@@ -94,6 +96,9 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     assert relevance_input.shape == input.shape, f"{relevance_input.shape} == {input.shape}"
 
+    # print("input", "min", input.min(), "max", input.max())
+    print("linear relevance_input", relevance_input.sum())
+
     trace.do_trace(relevance_input)
     return relevance_input, None, None
 
@@ -109,6 +114,7 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     # bias    ~ [ out_features ]
     # input   ~ [*, input_features]
     # Z       ~ [ *, out_features ]
+    print("linear relevance_output", relevance_output.sum())
 
     sel = weights > 0
     zeros = torch.zeros_like(weights)
@@ -153,6 +159,9 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     relevance_input = pos_rel * alpha - neg_rel * beta
 
     trace.do_trace(relevance_input)
+
+    print("linear relevance_input", relevance_input.sum())
+
     return relevance_input, None, None
 
 class LinearAlpha1Beta0(Function):
@@ -221,7 +230,7 @@ linear = {
         "epsilon":              LinearEpsilon.apply,
         "gamma":                LinearGamma.apply,
         "gamma+epsilon":        LinearGammaEpsilon.apply,
-        "alpha1beta0":          LinearAlpha1Beta0.apply,
+        "alpha1beta0":          LinearAlpha1Beta0Explicit.apply,
         "alpha2beta1":          LinearAlpha2Beta1.apply,
         "patternattribution":   LinearPatternAttribution.apply,
         "patternnet":           LinearPatternNet.apply,

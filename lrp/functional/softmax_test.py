@@ -5,7 +5,7 @@ from lrp.functional.softmax import SoftmaxAlpha1Beta0
 
 def test_lrp_softmax_alpha_beta():
 
-    in_features = 2
+    in_features = 10
 
     batch_size = 1
     in_tensor = torch.rand([batch_size, in_features], requires_grad=True)
