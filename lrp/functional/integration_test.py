@@ -66,8 +66,10 @@ def lrp_modification_module(nn_module):
     elif isinstance(nn_module, (LRPResidual)):
         # nn_module.forward =
         # return nn.Identity
+
         return nn_module
-    elif isinstance(nn_module, (nn.ReLU, nn.Dropout)):
+    elif isinstance(nn_module, (nn.ReLU, nn.Dropout, nn.GELU)):
+
         return LRPBackwardNoopModule(nn_module)
     elif isinstance(nn_module, nn.Softmax):
         return LRPSoftmax.from_torch(nn_module)
@@ -113,6 +115,8 @@ def test_lrt_transformer_block():
         attention_head_dim=10,
     )
     transformer_block_original = deepcopy(transformer_block)
+
+    print("transformer_block", transformer_block)
 
     convert_module(transformer_block)
 

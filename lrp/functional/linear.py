@@ -68,7 +68,18 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     # relevance_output ~ [ bs, out_features ]
 
     print("linear relevance_output", relevance_output.sum())
-    # print("linear relevance_output value", relevance_output)
+    # print("linear relevance_output shape", relevance_output.shape)
+
+    original_input_shape = input.shape
+    original_relevance_output_shape = relevance_output.shape
+
+    input_len_shape = len(original_input_shape)
+    if input_len_shape > 2:
+        input = input.flatten(0, input_len_shape - 2)
+        relevance_output = relevance_output.flatten(0, input_len_shape - 2)
+
+    # print("input", input.shape)
+    # print("relevance_output", relevance_output.shape)
 
     batch_size, in_features = input.shape[0], input.shape[1]
     out_features = weights.shape[0]
@@ -77,6 +88,7 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     input_unsqueezed = input.unsqueeze(-1) # [ *, in, 1 ]
     assert input_unsqueezed.shape[-1] == 1, f'input_unsqueezed.shape {input_unsqueezed.shape}'
+
     input_unsqueezed_repeated = input_unsqueezed.repeat(1, 1, out_features) # [ bs, input_features, out_features ]
 
     weights_unsqueezed = weights.unsqueeze(0) # [ 1, out_features, in_features ]
@@ -98,6 +110,9 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     # print("input", "min", input.min(), "max", input.max())
     print("linear relevance_input", relevance_input.sum())
+
+    if input_len_shape > 2:
+        relevance_input = relevance_input.reshape(original_input_shape)
 
     trace.do_trace(relevance_input)
     return relevance_input, None, None

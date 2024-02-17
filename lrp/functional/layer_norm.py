@@ -20,11 +20,26 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     # [ bs, in_features ]
     input, weight, bias = ctx.saved_tensors
 
+    original_input_shape = input.shape
+
+    input_len_shape = len(original_input_shape)
+    relevance_scaler = 1
+    if input_len_shape > 2:
+        batch_size = input.shape[0]
+        input = input.flatten(0, input_len_shape - 2)
+        relevance_scaler = input.shape[0] / batch_size
+        relevance_output = relevance_output.flatten(0, input_len_shape - 2)
+
+    # print("input", input.shape)
+    print("layer norm relevance_output", relevance_output.sum())
+
+    input_2_dim_shape = input.shape
+
     normalized_shape = ctx.normalized_shape
 
     # z_{ij} = 1/n * f( 0 ) +  df/dx(input)  * input
 
-    zeros = torch.zeros_like(input) + 1e-6
+    zeros = torch.zeros(input_2_dim_shape) + 1e-6
 
     layer_norm_module = nn.LayerNorm(normalized_shape)
     layer_norm_module.weight = nn.Parameter(weight)
@@ -33,30 +48,40 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
 
     # softmax_result = F.softmax(input=input, dim=ctx.dim) # [ bs, in_features ]
     # layer_norm_jacobian = torch.diag_embed(softmax_result) - torch.outer(softmax_result, softmax_result)
-    layer_norm_jacobian = jacobian(layer_norm_module, input).squeeze(2)
-    # print("layer_norm_jacobian", layer_norm_jacobian.shape) # [ bs, in_features, in_features ]
+    input_jacobians = []
+    for i in range(input.shape[0]):
+        layer_norm_jacobian = jacobian(layer_norm_module, input[i:i+1, :]).squeeze(2)
+        input_jacobians.append(layer_norm_jacobian)
+        # print("layer_norm_jacobian", layer_norm_jacobian.shape)
 
-    # print("layer_norm_jacobian", layer_norm_jacobian)
-    # print("input", input)
-    z_ij = 1/normalized_shape[0] * layer_norm_module(zeros) + torch.bmm(layer_norm_jacobian, input.unsqueeze(2)).squeeze(-1)
+    input_jacobians = torch.vstack(input_jacobians)
+    # print("input_jacobians", input_jacobians.shape)
+    # print("input.unsqueeze(2)", input.unsqueeze(2).shape)
+
+    z_ij = 1/normalized_shape[0] * layer_norm_module(zeros) + torch.bmm(input_jacobians, input.unsqueeze(2)).squeeze(-1)
     # print("z_ij", z_ij.shape)
 
-    # [ bs, out_features, in_features ]
     total_relevance = alpha_beta_on_z_ij(alpha, beta, z_ij)
 
     # print("total_relevance", total_relevance.shape)
-    # print("total_relevance", total_relevance)
-    # print("relevance_output", relevance_output.shape)
-    # print("relevance_output", relevance_output)
 
     relevance_input = relevance_output * total_relevance
-    relevance_input = relevance_input / relevance_input.sum(dim=-1)
+    relevance_input = relevance_input / relevance_input.sum(dim=-1, keepdim=True)
 
     assert relevance_input.shape == input.shape, f"{relevance_input.shape} == {input.shape}"
 
     trace.do_trace(relevance_input)
 
-    return total_relevance, None, None, None
+    if input_len_shape > 2:
+        relevance_input = relevance_input.reshape(original_input_shape)
+
+    print("relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
+    relevance_input = relevance_input / relevance_scaler
+
+    print("layer norm relevance_input", relevance_input.sum())
+
+
+    return relevance_input, None, None, None
 
 
 class LayerNormAlpha1Beta0(Function):
