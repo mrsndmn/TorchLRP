@@ -194,8 +194,7 @@ def test_lrp_transformer_model():
     }
     model = Transformer2DModel(**model_kwargs)
 
-
-    model.eval()
+    model.train()
     model_original = deepcopy(model)
 
     convert_module(model)
@@ -204,6 +203,26 @@ def test_lrp_transformer_model():
     image_size = 32
     hidden_states = torch.randint(0, 10, [batch_size, image_size]) # [bs, seq_len, hidden_dim]
     timesteps = torch.randint(0, 100, [batch_size])
+
+    backward_result = {}
+
+    def my_hook(layer_name):
+        def layers_backward_hook(module, grad_output):
+            grad_output = grad_output[0]
+            print("hook", layer_name, module)
+            # if grad_input is not None:
+            #     print("grad_input", grad_input.shape)
+            print("output", grad_output.shape)
+
+            backward_result[layer_name] = grad_output
+
+            return None
+        return layers_backward_hook
+
+    model.latent_image_embedding.emb.register_full_backward_pre_hook(my_hook('emb'))
+    model.latent_image_embedding.height_emb.register_full_backward_pre_hook(my_hook('height_emb'))
+    model.latent_image_embedding.width_emb.register_full_backward_pre_hook(my_hook('width_emb'))
+
 
     transformer_out          = model.forward(hidden_states, timestep=timesteps)
     transformer_original_out = model_original.forward(hidden_states, timestep=timesteps)
@@ -215,8 +234,9 @@ def test_lrp_transformer_model():
 
     transformer_out_sample.backward( torch.ones_like(transformer_out_sample) / transformer_out_sample.numel() )
 
-    # hidden_states_grad_sum = hidden_states.grad.sum()
-    # print("hidden_states_grad_sum", hidden_states_grad_sum)
+    print("emb.grad        ", backward_result["emb"].sum())
+    print("height_emb.grad ", backward_result["height_emb"].sum())
+    print("width_emb.grad  ", backward_result["width_emb"].sum())
 
     return
 
