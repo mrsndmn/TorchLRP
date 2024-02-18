@@ -20,7 +20,7 @@ def _backward_alpha_beta(ctx, relevance_output):
 
     print("residual relevance_output", relevance_output.sum())
     relevance_input = relevance_output / 2
-    print("residual relevance_input", relevance_input.sum())
+    print("residual relevance_input per one", relevance_input.sum())
     # print("residual relevance_input value", relevance_input)
 
     trace.do_trace(relevance_input)

@@ -27,11 +27,13 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     if input_len_shape > 2:
         batch_size = input.shape[0]
         input = input.flatten(0, input_len_shape - 2)
-        relevance_scaler = input.shape[0] / batch_size
+        relevance_scaler = input.shape[0]
         relevance_output = relevance_output.flatten(0, input_len_shape - 2)
 
     # print("input", input.shape)
-    print("layer norm relevance_output", relevance_output.sum())
+    relevance_output_sum = relevance_output.sum()
+    print("layer norm input", input.shape)
+    print("layer norm relevance_output", relevance_output_sum)
 
     input_2_dim_shape = input.shape
 
@@ -42,8 +44,10 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     zeros = torch.zeros(input_2_dim_shape) + 1e-6
 
     layer_norm_module = nn.LayerNorm(normalized_shape)
-    layer_norm_module.weight = nn.Parameter(weight)
-    layer_norm_module.bias =   nn.Parameter(bias)
+    if weight is not None:
+        layer_norm_module.weight = nn.Parameter(weight)
+    if bias is not None:
+        layer_norm_module.bias =   nn.Parameter(bias)
 
 
     # softmax_result = F.softmax(input=input, dim=ctx.dim) # [ bs, in_features ]
@@ -76,7 +80,7 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
         relevance_input = relevance_input.reshape(original_input_shape)
 
     print("relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
-    relevance_input = relevance_input / relevance_scaler
+    relevance_input = relevance_input / relevance_scaler * relevance_output_sum
 
     print("layer norm relevance_input", relevance_input.sum())
 
