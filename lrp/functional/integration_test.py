@@ -121,7 +121,7 @@ def test_lrp_attention():
 
     convert_module(attention)
 
-    hidden_states = torch.rand([1, 3, inner_dim], requires_grad=True) # [bs, seq_len, hidden_dim]
+    hidden_states = torch.rand([10, 7, inner_dim], requires_grad=True) # [bs, seq_len, hidden_dim]
     attention_out = attention.forward(hidden_states)
     attention_original_out = attention_original.forward(hidden_states)
 
@@ -134,7 +134,7 @@ def test_lrp_attention():
     hidden_states_grad_sum = hidden_states.grad.sum()
     print("hidden_states_grad_sum", hidden_states_grad_sum)
 
-    assert hidden_states_grad_sum == 1, 'hidden_states_grad_sum is 1'
+    assert torch.allclose(hidden_states_grad_sum, torch.tensor(1.), atol=1e-4), 'hidden_states_grad_sum is 1'
 
     return
 

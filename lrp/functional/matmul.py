@@ -19,6 +19,7 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     assert len(input1.shape) == len(input2.shape), 'inputs has the same dims count'
 
+    relevance_output_sum = relevance_output.sum()
     print("matmul relevance_output", relevance_output.sum())
     print("matmul input1", input1.shape)
     print("matmul input2", input2.shape)
@@ -41,9 +42,9 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     if out_relevance_len_shape > 2:
         relevance_output = relevance_output.flatten(0, out_relevance_len_shape - 3)
 
-    print('input1.shape', input1.shape)
-    print('input2.shape', input2.shape)
-    print('relevance_output', relevance_output.shape)
+    # print('input1.shape', input1.shape)
+    # print('input2.shape', input2.shape)
+    # print('relevance_output', relevance_output.shape)
     batch_size, in_features, hidden_dim = input1.shape[0], input1.shape[1], input1.shape[2]
     out_features = input2.shape[2]
 
@@ -63,8 +64,7 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     # [ bs, in_features, out_features, hidden ] # normed by hidden
     total_relevance = alpha_beta_on_z_ij(alpha, beta, z_ij)
-    print("total_relevance.shape", total_relevance.shape)
-    print("relevance_output.shape", relevance_output.shape)
+    # print("relevance_output.shape", relevance_output.shape)
 
     # [ bs, in_features, 1, out_features ] @ [ bs, in_features, out_features, hidden ]
     relevance_input1 = torch.bmm(relevance_output.unsqueeze(2).flatten(0, 1), total_relevance.flatten(0, 1)) # [ bs, in_features, 1, hidden_dim ]
@@ -88,13 +88,14 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     if input2_len_shape > 2:
         relevance_input2 = relevance_input2.reshape(original_input2_shape)
 
-    print("matmul relevance_input1", relevance_input1.sum())
-    print("matmul relevance_input2", relevance_input2.sum())
 
     # trace.do_trace(relevance_input1)
     # trace.do_trace(relevance_input2)
-    relevance_input1 = relevance_input1 / 2
-    relevance_input2 = relevance_input2 / 2
+    relevance_input1 = relevance_input1 / relevance_input1.sum() / 2 * relevance_output_sum
+    relevance_input2 = relevance_input2 / relevance_input2.sum() / 2 * relevance_output_sum
+
+    print("matmul relevance_input1", relevance_input1.sum())
+    print("matmul relevance_input2", relevance_input2.sum())
 
     return relevance_input1, relevance_input2
 

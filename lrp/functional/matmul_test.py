@@ -11,8 +11,8 @@ def test_lrp_matmul_alpha_beta():
     hidden_dim = 4
     target_seq_len = 3
 
-    input1 = torch.rand([batch_size, num_heads, source_seq_len, hidden_dim], requires_grad=True)
-    input2 = torch.rand([batch_size, num_heads, hidden_dim, target_seq_len], requires_grad=True)
+    input1 = torch.rand([batch_size, 8, 3, 3], requires_grad=True)
+    input2 = torch.rand([batch_size, 8, 3, 64], requires_grad=True)
 
     # torch.Size([1, 8, 3, 64]) torch.Size([1, 8, 64, 3])
     print("input1.shape", input1.shape)

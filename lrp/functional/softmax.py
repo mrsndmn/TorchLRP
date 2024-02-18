@@ -21,8 +21,8 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     input = ctx.saved_tensors[0]
 
     # batch_size, in_features = input.shape
-
-    print("softmax relevance_output sum ", relevance_output.sum())
+    relevance_output_sum = relevance_output.sum()
+    print("softmax relevance_output sum ", relevance_output_sum)
 
     original_input_shape = input.shape
 
@@ -31,7 +31,7 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     if input_len_shape > 2:
         batch_size = input.shape[0]
         input = input.flatten(0, input_len_shape - 2)
-        relevance_scaler = input.shape[0] / batch_size
+        relevance_scaler = input.shape[0]
         relevance_output = relevance_output.flatten(0, input_len_shape - 2)
 
     n = input.shape[ctx.dim] # number of input features
@@ -77,7 +77,7 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
         relevance_input = relevance_input.reshape(original_input_shape)
 
     print("relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
-    relevance_input = relevance_input / relevance_scaler
+    relevance_input = relevance_input / relevance_scaler * relevance_output_sum
 
     print("softmax relevance input sum", relevance_input.sum())
 
