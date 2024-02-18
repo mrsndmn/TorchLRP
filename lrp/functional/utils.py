@@ -44,7 +44,7 @@ def alpha_beta_on_z_ij(alpha, beta, z_ij):
     z_ij_positive = torch.max(z_ij, torch.zeros_like(z_ij))
     z_ij_negative = torch.min(z_ij, torch.zeros_like(z_ij))
 
-    # [ bs, 1, in_features ]
+    # [ bs, out_features, 1 ]
     z_j_positive_sum = z_ij_positive.sum(dim=-1, keepdim=True) + 1e-6
     z_j_negative_sum = z_ij_negative.sum(dim=-1, keepdim=True) + 1e-6
 

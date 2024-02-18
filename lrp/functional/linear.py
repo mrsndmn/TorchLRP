@@ -101,6 +101,9 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     # [ bs, out_features, in_features ]
     total_relevance = alpha_beta_on_z_ij(alpha, beta, z_ij)
 
+    # [ bs, in_features, out_features ]
+    total_relevance_T = alpha_beta_on_z_ij(alpha, beta, z_ij.T)
+
     # relevance_output.unsqueeze(1) ~ [ bs, 1, out_features ]
     relevance_input = torch.bmm(relevance_output.unsqueeze(1), total_relevance) # [ bs, 1, in_features ]
 
