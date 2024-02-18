@@ -1,38 +1,11 @@
 from copy import deepcopy
-from xml.dom.minidom import Identified
 import pytest
 import torch
 import torch.nn as nn
-from torch.autograd import Function
 
-from lrp.functional.residual import ResidualAlpha1Beta0
-from lrp.functional.softmax import SoftmaxAlpha1Beta0
-from lrp.functional.linear import LinearAlpha1Beta0
-from lrp.functional.layer_norm import LayerNormAlpha1Beta0
+from lrp.functional.integration import convert_module, register_lrp_hooks
 
-from lrp.linear import Linear as LRPLinear
-from lrp.softmax import Softmax as LRPSoftmax
 from lrp.residual import Residual as LRPResidual
-from lrp.layer_norm import LayerNorm as LRPLayerNorm
-
-class LRPBackwardNoopModule(nn.Module):
-    def __init__(self, module):
-        super().__init__()
-
-        self.module = module
-
-    def forward(self, input1):
-        return ActivationAlpha1Beta0.apply(self.module, input1)
-
-class ActivationAlpha1Beta0(Function):
-    @staticmethod
-    def forward(ctx, activation_module, input1):
-        return activation_module(input1)
-
-    @staticmethod
-    def backward(ctx, relevance_output):
-        return None, relevance_output
-
 
 class IntegrationModule(nn.Module):
     def __init__(self):
@@ -56,55 +29,6 @@ class IntegrationModule(nn.Module):
         output = self.out(self.resudual(latent1, latent2))
 
         return self.softmax(output)
-
-def lrp_modification_module(nn_module):
-    print("lrp modify", nn_module)
-
-    if isinstance(nn_module, nn.Linear):
-        return LRPLinear.from_torch(nn_module)
-    elif isinstance(nn_module, nn.LayerNorm):
-        return LRPLayerNorm.from_torch(nn_module)
-    elif isinstance(nn_module, (LRPResidual, nn.Embedding, nn.SiLU)):
-        # nn_module.forward =
-        # return nn.Identity
-
-        return nn_module
-    elif isinstance(nn_module, (nn.ReLU, nn.Dropout, nn.GELU)):
-
-        return LRPBackwardNoopModule(nn_module)
-    elif isinstance(nn_module, nn.Softmax):
-        # return nn.Identity
-        return LRPSoftmax.from_torch(nn_module)
-    elif isinstance(nn_module, nn.ModuleList):
-        return nn.ModuleList([ lrp_modification_module(module_list_item) for module_list_item in nn_module ])
-    else:
-        nested_modules = get_nested_nn_modules(nn_module)
-        if len(nested_modules) > 0:
-            # go recursively
-            print("Going to convert recursively module", nn_module)
-            convert_module(nn_module)
-            return nn_module
-
-        raise ValueError("Unsupported module for lrp modification:", nn_module)
-
-def get_nested_nn_modules(model):
-    nn_modules_list = []
-    for attribute_name in dir(model):
-        is_public = not attribute_name.startswith("_")
-        attribute_value = getattr(model, attribute_name)
-        is_nn_module = isinstance(attribute_value, nn.Module)
-        if is_public and is_nn_module:
-            nn_modules_list.append(attribute_name)
-    return nn_modules_list
-
-
-def convert_module(model):
-
-    for attribute_name in get_nested_nn_modules(model):
-        attribute_value = getattr(model, attribute_name)
-        setattr(model, attribute_name, lrp_modification_module(attribute_value))
-
-    return
 
 def test_lrp_attention():
 
@@ -178,9 +102,10 @@ def test_lrp_transformer_model():
 
     from diffusers import Transformer2DModel
 
+    cross_attention_dim = 128
     model_kwargs = {
         "attention_bias": True,
-        "cross_attention_dim": 128,
+        "cross_attention_dim": cross_attention_dim,
         "attention_head_dim": 64,
         "num_attention_heads": 2,
         "num_vector_embeds": 10,
@@ -202,30 +127,21 @@ def test_lrp_transformer_model():
     batch_size = 3
     image_size = 32
     hidden_states = torch.randint(0, 10, [batch_size, image_size]) # [bs, seq_len, hidden_dim]
+    encoder_hidden_states = torch.rand([batch_size, 3, cross_attention_dim], requires_grad=True) # [bs, seq_len, hidden_dim]
     timesteps = torch.randint(0, 100, [batch_size])
 
-    backward_result = {}
+    register_lrp_hooks(model)
 
-    def my_hook(layer_name):
-        def layers_backward_hook(module, grad_output):
-            grad_output = grad_output[0]
-            print("hook", layer_name, module)
-            # if grad_input is not None:
-            #     print("grad_input", grad_input.shape)
-            print("output", grad_output.shape)
-
-            backward_result[layer_name] = grad_output
-
-            return None
-        return layers_backward_hook
-
-    model.latent_image_embedding.emb.register_full_backward_pre_hook(my_hook('emb'))
-    model.latent_image_embedding.height_emb.register_full_backward_pre_hook(my_hook('height_emb'))
-    model.latent_image_embedding.width_emb.register_full_backward_pre_hook(my_hook('width_emb'))
-
-
-    transformer_out          = model.forward(hidden_states, timestep=timesteps)
-    transformer_original_out = model_original.forward(hidden_states, timestep=timesteps)
+    transformer_out = model.forward(
+        hidden_states,
+        encoder_hidden_states=encoder_hidden_states,
+        timestep=timesteps
+    )
+    transformer_original_out = model_original.forward(
+        hidden_states,
+        encoder_hidden_states=encoder_hidden_states,
+        timestep=timesteps,
+    )
 
     transformer_out_sample = transformer_out.sample
     print("transformer_out", transformer_out_sample.shape)
@@ -234,9 +150,16 @@ def test_lrp_transformer_model():
 
     transformer_out_sample.backward( torch.ones_like(transformer_out_sample) / transformer_out_sample.numel() )
 
-    print("emb.grad        ", backward_result["emb"].sum())
-    print("height_emb.grad ", backward_result["height_emb"].sum())
-    print("width_emb.grad  ", backward_result["width_emb"].sum())
+    print("model.source_sequence_relevances", model.source_sequence_relevances[0].sum())
+    # print("model.condition_sequence_relevances", model.condition_sequence_relevances[0].sum())
+    print("encoder_hidden_states", encoder_hidden_states.grad.sum())
+
+    assert len(model.source_sequence_relevances) == 1
+    # assert len(model.condition_sequence_relevances) == 1
+
+    assert model.source_sequence_relevances[0].shape == torch.Size([batch_size, image_size, cross_attention_dim])
+    # assert model.condition_sequence_relevances[0].shape == encoder_hidden_states.shape
+    assert encoder_hidden_states.grad.shape == encoder_hidden_states.shape
 
     return
 
