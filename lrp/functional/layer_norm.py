@@ -12,6 +12,8 @@ def _forward_alpha_beta(ctx, input, normalized_shape, weight, bias):
     Z = F.layer_norm(input, normalized_shape, weight, bias)
 
     ctx.normalized_shape = normalized_shape
+    if isinstance(normalized_shape, list):
+        assert len(normalized_shape) == 1, f"len(normalized_shape)={len(normalized_shape)}"
 
     ctx.save_for_backward(input, weight, bias)
     return Z
@@ -40,8 +42,9 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     normalized_shape = ctx.normalized_shape
 
     # z_{ij} = 1/n * f( 0 ) +  df/dx(input)  * input
+    eps = 1e-5
 
-    zeros = torch.zeros(input_2_dim_shape) + 1e-6
+    zeros = torch.zeros(input_2_dim_shape) + eps
 
     layer_norm_module = nn.LayerNorm(normalized_shape)
     if weight is not None:
@@ -50,20 +53,50 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
         layer_norm_module.bias =   nn.Parameter(bias)
 
 
-    # softmax_result = F.softmax(input=input, dim=ctx.dim) # [ bs, in_features ]
-    # layer_norm_jacobian = torch.diag_embed(softmax_result) - torch.outer(softmax_result, softmax_result)
-    input_jacobians = []
-    for i in range(input.shape[0]):
-        layer_norm_jacobian = jacobian(layer_norm_module, input[i:i+1, :]).squeeze(2)
-        input_jacobians.append(layer_norm_jacobian)
-        # print("layer_norm_jacobian", layer_norm_jacobian.shape)
+    mean_variance_dims = [ -1 ]
+    n_for_mean_variance = normalized_shape
+    if isinstance(normalized_shape, list):
+        mean_variance_dims = list(range(-len(normalized_shape), 0))
+        n_for_mean_variance = 1
+        for dim in normalized_shape:
+            n_for_mean_variance = dim * n_for_mean_variance
 
-    input_jacobians = torch.vstack(input_jacobians)
-    # print("input_jacobians", input_jacobians.shape)
-    # print("input.unsqueeze(2)", input.unsqueeze(2).shape)
+    print("layer norm: mean_variance_dims=", mean_variance_dims, "n_for_mean_variance=", n_for_mean_variance)
 
+    batch_variance = torch.var(input, dim=mean_variance_dims, keepdim=True, unbiased=False)
+    batch_mean     = torch.mean(input, dim=mean_variance_dims, keepdim=True)
+
+    # [ bs, embedding_dim, embedding_dim ]
+    eye_mask = torch.eye(n_for_mean_variance).unsqueeze(0).repeat(input.shape[0], 1, 1)
+
+    # [ bs, embedding_dim ]
+    input_jacobians_numerator_eye = ((n_for_mean_variance - 1) / n_for_mean_variance * batch_variance) - (input - batch_mean) / (n_for_mean_variance - 1)
+    input_jacobians_numerator_eye = input_jacobians_numerator_eye.unsqueeze(2).repeat(1, 1, n_for_mean_variance)
+    # [ bs, embedding_dim, embedding_dim ]
+    input_jacobians_numerator_eye[ eye_mask == 0 ] = 0
+
+    # [ bs, embedding_dim ]
+    input_jacobians_numerator_out_of_eye = (-1 / n_for_mean_variance * batch_variance) - (input - batch_mean) / (n_for_mean_variance - 1)
+    # [ bs, embedding_dim, embedding_dim ]
+    input_jacobians_numerator_out_of_eye = input_jacobians_numerator_out_of_eye.unsqueeze(2).repeat(1, 1, n_for_mean_variance)
+
+    # combine eye and out of eye
+    input_jacobians_numerator = input_jacobians_numerator_out_of_eye
+    input_jacobians_numerator[ eye_mask.bool() ] = input_jacobians_numerator_eye[ eye_mask.bool() ]
+
+    # d LayerNorm / d x_i
+    # [ bs, embedding_dim, embedding_dim ]
+    # print("batch_variance", batch_variance.shape)
+    # print("input_jacobians_numerator", input_jacobians_numerator.shape)
+    batch_variance_unsqueezed = batch_variance.unsqueeze(2)
+    input_jacobians = input_jacobians_numerator / torch.sqrt( batch_variance_unsqueezed + eps ) * (batch_variance_unsqueezed + eps)
+
+    if weight is not None:
+        input_jacobians *= layer_norm_module.weight.unsqueeze(0)
+
+    # [ bs, embedding_dim, 1 ]
     z_ij = 1/normalized_shape[0] * layer_norm_module(zeros) + torch.bmm(input_jacobians, input.unsqueeze(2)).squeeze(-1)
-    # print("z_ij", z_ij.shape)
+    print("z_ij", z_ij.shape)
 
     total_relevance = alpha_beta_on_z_ij(alpha, beta, z_ij)
 

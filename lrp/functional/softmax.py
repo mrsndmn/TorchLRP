@@ -20,7 +20,7 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     # [ bs, in_features ]
     input = ctx.saved_tensors[0]
 
-    # batch_size, in_features = input.shape
+    batch_size, in_features = input.shape
     relevance_output_sum = relevance_output.sum()
     print("softmax relevance_output sum ", relevance_output_sum)
 
@@ -41,18 +41,22 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
 
     zeros = torch.zeros_like(input) + 1e-6
 
-    softmax_module = nn.Softmax(dim=ctx.dim)
+    softmax_module = nn.Softmax(dim=-1)
     # softmax_result = F.softmax(input=input, dim=ctx.dim) # [ bs, in_features ]
     # softmax_jacobian = torch.diag_embed(softmax_result) - torch.outer(softmax_result, softmax_result)
-    input_jacobians = []
-    for i in range(input.shape[0]):
-        layer_norm_jacobian = jacobian(softmax_module, input[i:i+1, :]).squeeze(2)
-        input_jacobians.append(layer_norm_jacobian)
-        # print("layer_norm_jacobian", layer_norm_jacobian.shape)
 
-    softmax_jacobian = torch.vstack(input_jacobians)
+    softmax_output = softmax_module(input) # [ bs ]
+    assert softmax_output.shape == torch.Size([batch_size, in_features])
 
-    # print("softmax_jacobian", softmax_jacobian.shape) # [ bs, in_features, in_features ]
+    # [ bs, 1, in_features ]
+    softmax_output_unsqueezed = softmax_output.unsqueeze(1)
+    # [ bs, in_features, 1 ]
+    softmax_output_unsqueezed_t = softmax_output_unsqueezed.permute(0, 2, 1)
+
+    # bs, in_features, in_features
+    softmax_jacobian = torch.bmm(softmax_output_unsqueezed_t, 1 - softmax_output_unsqueezed)
+
+    # print("softmax_jacobian", softmax_jacobian) # [ bs, in_features, in_features ]
     # assert softmax_jacobian.shape == torch.Size([batch_size, in_features, in_features]), 'softmax_jacobian shape is ok'
 
     # print("softmax_jacobian", softmax_jacobian)
@@ -76,10 +80,10 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     if input_len_shape > 2:
         relevance_input = relevance_input.reshape(original_input_shape)
 
-    print("relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
+    # print("relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
     relevance_input = relevance_input / relevance_scaler * relevance_output_sum
 
-    print("softmax relevance input sum", relevance_input.sum())
+    # print("softmax relevance input sum", relevance_input.sum())
 
     return relevance_input, None
 

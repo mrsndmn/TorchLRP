@@ -6,8 +6,6 @@ import torch.nn as nn
 from .utils import alpha_beta_on_z_ij
 from .. import trace
 
-from torch.autograd.functional import jacobian
-
 def _forward_alpha_beta(ctx, input1, input2):
     Z = input1 + input2
 

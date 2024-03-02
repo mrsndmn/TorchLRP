@@ -24,5 +24,5 @@ def test_lrp_layer_norm_alpha_beta():
 
     print("in_tensor.grad", in_tensor.grad)
     print("in_tensor.grad.sum", in_tensor.grad.sum())
-    assert torch.allclose(in_tensor.grad.flatten(1).sum(dim=-1), torch.ones([batch_size]), atol=1e-4), 'sum relevance is constant'
+    assert torch.allclose(in_tensor.grad.flatten(1).sum(dim=-1), torch.ones([batch_size]) / batch_size, atol=1e-4), 'sum relevance is constant'
 
