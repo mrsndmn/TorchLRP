@@ -19,6 +19,7 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     assert len(input1.shape) == len(input2.shape), 'inputs has the same dims count'
 
+    # print("matmul relevance_output", relevance_output)
     relevance_output_sum = relevance_output.sum()
     print("matmul relevance_output", relevance_output.sum())
     print("matmul input1", input1.shape)
@@ -91,8 +92,10 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
 
     # trace.do_trace(relevance_input1)
     # trace.do_trace(relevance_input2)
-    relevance_input1 = relevance_input1 / relevance_input1.sum() / 2 * relevance_output_sum
-    relevance_input2 = relevance_input2 / relevance_input2.sum() / 2 * relevance_output_sum
+    relevance_input1 += 1e-6
+    relevance_input2 += 1e-6
+    relevance_input1 = relevance_input1 / relevance_input1.sum() / 2 * (relevance_output_sum+1e-5)
+    relevance_input2 = relevance_input2 / relevance_input2.sum() / 2 * (relevance_output_sum+1e-5)
 
     print("matmul relevance_input1", relevance_input1.sum())
     print("matmul relevance_input2", relevance_input2.sum())
@@ -110,6 +113,6 @@ class MatMulAlpha1Beta0(Function):
         return _backward_alpha_beta_explicit(1., 0., ctx, relevance_output)
 
 matmul = {
-        "gradient":             F.linear,
-        "alpha1beta0":          MatMulAlpha1Beta0.apply,
+    "gradient":             lambda x, y: x @ y,
+    "alpha1beta0":          MatMulAlpha1Beta0.apply,
 }

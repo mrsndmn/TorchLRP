@@ -20,6 +20,8 @@ class IntegrationModule(nn.Module):
 
         self.resudual = LRPResidual()
 
+        self.tensor_log = torch.log
+
         return
 
     def forward(self, input):
@@ -28,7 +30,7 @@ class IntegrationModule(nn.Module):
         latent2 = self.activation(self.lin2(latent1))
         output = self.out(self.resudual(latent1, latent2))
 
-        return self.softmax(output)
+        return self.tensor_log(self.softmax(output))
 
 def test_lrp_attention():
 
@@ -63,38 +65,84 @@ def test_lrp_attention():
     return
 
 
+def test_lrp_geglu():
+
+    from diffusers.models.attention import GEGLU
+    geglu = GEGLU(32, 32)
+
+    geglu_original = deepcopy(geglu)
+
+    convert_module(geglu)
+
+    batch_size = 3
+    hidden_dim = 32
+    hidden_state = torch.rand([batch_size, hidden_dim], requires_grad=True)
+
+    geglu_out = geglu.forward(
+        hidden_state
+    )
+    geglu_original_out = geglu_original.forward(
+        hidden_state,
+    )
+
+    assert torch.allclose(geglu_out, geglu_original_out, atol=1e-6), 'blocks outputs are the same'
+
+    backward_relevance = torch.ones_like(geglu_out) / geglu_out.numel()
+    geglu_out.backward( backward_relevance )
+
+    hidden_state_grad_sum = hidden_state.grad.sum()
+    backward_relevance_sum = backward_relevance.sum()
+    assert torch.allclose(hidden_state_grad_sum, backward_relevance_sum, atol=1e-4)
+
+    return
+
+
 
 def test_lrp_transformer_block():
 
     from diffusers.models.attention import BasicTransformerBlock
 
     inner_dim = 30
+    cross_attention_dim = 30
     transformer_block = BasicTransformerBlock(
         dim=inner_dim,
+        cross_attention_dim=cross_attention_dim,
         num_attention_heads=3,
         attention_head_dim=10,
+
     )
     transformer_block.eval()
     transformer_block_original = deepcopy(transformer_block)
+
+    import torch
+    torch.nn.modules.module.register_module_full_backward_hook(lambda module, grad_input, grad_output: print("compute backward for", module, [ gi.sum() for gi in grad_input if gi is not None ], [go.sum() for go in grad_output if go is not None]))
 
     print("transformer_block", transformer_block)
 
     convert_module(transformer_block)
 
     hidden_states = torch.rand([1, 3, inner_dim], requires_grad=True) # [bs, seq_len, hidden_dim]
-    transformer_block_out = transformer_block.forward(hidden_states)
-    transformer_block_original_out = transformer_block_original.forward(hidden_states)
+    encoder_hidden_state = torch.rand([1, 3, cross_attention_dim], requires_grad=True) # [bs, seq_len, hidden_dim]
+    transformer_block_out = transformer_block.forward(hidden_states, encoder_hidden_states=encoder_hidden_state)
+    transformer_block_original_out = transformer_block_original.forward(hidden_states, encoder_hidden_states=encoder_hidden_state)
 
     assert torch.allclose(transformer_block_out, transformer_block_original_out, atol=1e-6), 'blocks outputs are the same'
 
     print("transformer_block_out", transformer_block_out.shape)
 
-    transformer_block_out.backward( torch.ones_like(transformer_block_out) / transformer_block_out.numel() )
+    backward_relevance = torch.ones_like(transformer_block_out) / transformer_block_out.numel()
+
+    print("LRP Start Compute")
+    transformer_block_out.backward( backward_relevance )
 
     hidden_states_grad_sum = hidden_states.grad.sum()
     print("hidden_states_grad_sum", hidden_states_grad_sum)
+    encoder_hidden_state_grad_sum = encoder_hidden_state.grad.sum()
+    print("encoder_hidden_state_grad_sum", encoder_hidden_state_grad_sum)
 
-    # assert hidden_states_grad_sum == 1, 'hidden_states_grad_sum is 1'
+    backward_relevance_sum = backward_relevance.sum()
+
+    assert torch.allclose(hidden_states_grad_sum + encoder_hidden_state_grad_sum, backward_relevance_sum, atol=1e-3), 'relevance sum is constant'
 
     return
 
@@ -106,13 +154,13 @@ def test_lrp_transformer_model():
     model_kwargs = {
         "attention_bias": True,
         "cross_attention_dim": cross_attention_dim,
-        "attention_head_dim": 64,
-        "num_attention_heads": 2,
+        "attention_head_dim": 32,
+        "num_attention_heads": 4,
         "num_vector_embeds": 10,
         "num_embeds_ada_norm": 100,
         "sample_size": 32,
         "height": 32,
-        "num_layers": 2,
+        "num_layers": 5,
         "activation_fn": "geglu-approximate",
         "output_attentions": True,
         "dropout": 0,
@@ -177,9 +225,11 @@ def test_lrp_mlp():
     latent1 = m.activation(m.lin1(input))
     latent2 = m.activation(m.lin2(latent1))
     output = m.out(m.resudual(latent1, latent2))
-    probas = m.softmax(output)
+    log_probas = m.softmax(output)
 
-    probas.backward(torch.ones_like(probas))
+    # print("log_probas", log_probas)
+
+    log_probas.backward(torch.ones_like(log_probas) / log_probas.shape[-1])
 
     input_grad_sum = input.grad.sum(dim=-1)
     print(input_grad_sum)

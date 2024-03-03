@@ -59,6 +59,7 @@ def _forward_alpha_beta(ctx, input, weight, bias):
     ctx.save_for_backward(input, weight, bias)
     return Z
 
+@torch.no_grad
 def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     input, weights, bias = ctx.saved_tensors
 
@@ -67,7 +68,7 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     # input            ~ [ bs, in_features ]
     # relevance_output ~ [ bs, out_features ]
 
-    print("linear relevance_output", relevance_output.sum())
+    print("linear relevance_output", relevance_output.sum(), 'relevance_output.shape', relevance_output.shape)
     # print("linear relevance_output shape", relevance_output.shape)
 
     original_input_shape = input.shape
@@ -89,8 +90,10 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     input_unsqueezed = input.unsqueeze(-1) # [ *, in, 1 ]
     assert input_unsqueezed.shape[-1] == 1, f'input_unsqueezed.shape {input_unsqueezed.shape}'
 
+    print("linear compute repeat")
     input_unsqueezed_repeated = input_unsqueezed.repeat(1, 1, out_features) # [ bs, input_features, out_features ]
 
+    print("linear compute z_ij")
     weights_unsqueezed = weights.unsqueeze(0) # [ 1, out_features, in_features ]
     weights_unsqueezed_permuted = weights_unsqueezed.permute(0, 2, 1) # [ 1, in_features, out_features ]
     z_ij = input_unsqueezed_repeated * weights_unsqueezed_permuted # [ bs, in_features, out_features ]
@@ -99,9 +102,14 @@ def _backward_alpha_beta_explicit(alpha, beta, ctx, relevance_output):
     assert z_ij.shape == torch.Size([batch_size, out_features, in_features]), f"z_ij.shape {z_ij.shape}"
 
     # [ bs, out_features, in_features ]
+    import os, psutil
+    process = psutil.Process()
+    print("rss", process.memory_info().rss / 1024 / 1024)  # in MB
+    print("linear compute alpha_beta_on_z_ij")
     total_relevance = alpha_beta_on_z_ij(alpha, beta, z_ij)
 
     # relevance_output.unsqueeze(1) ~ [ bs, 1, out_features ]
+    print("linear compute bmm")
     relevance_input = torch.bmm(relevance_output.unsqueeze(1), total_relevance) # [ bs, 1, in_features ]
 
     relevance_input = relevance_input.squeeze(1)

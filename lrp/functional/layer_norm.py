@@ -55,7 +55,7 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
 
     mean_variance_dims = [ -1 ]
     n_for_mean_variance = normalized_shape
-    if isinstance(normalized_shape, list):
+    if isinstance(normalized_shape, (list, tuple)):
         mean_variance_dims = list(range(-len(normalized_shape), 0))
         n_for_mean_variance = 1
         for dim in normalized_shape:
@@ -96,14 +96,14 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
 
     # [ bs, embedding_dim, 1 ]
     z_ij = 1/normalized_shape[0] * layer_norm_module(zeros) + torch.bmm(input_jacobians, input.unsqueeze(2)).squeeze(-1)
-    print("z_ij", z_ij.shape)
+    # print("z_ij", z_ij.shape)
 
     total_relevance = alpha_beta_on_z_ij(alpha, beta, z_ij)
 
     # print("total_relevance", total_relevance.shape)
 
-    relevance_input = relevance_output * total_relevance
-    relevance_input = relevance_input / relevance_input.sum(dim=-1, keepdim=True)
+    relevance_input = relevance_output * total_relevance + 1e-6
+    relevance_input = relevance_input / (relevance_input.sum(dim=-1, keepdim=True))
 
     assert relevance_input.shape == input.shape, f"{relevance_input.shape} == {input.shape}"
 
@@ -112,10 +112,12 @@ def _backward_alpha_beta(alpha, beta, ctx, relevance_output):
     if input_len_shape > 2:
         relevance_input = relevance_input.reshape(original_input_shape)
 
-    print("relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
+    print("layer norm relevance_scaler", relevance_scaler, "relevance_input", relevance_input.shape)
     relevance_input = relevance_input / relevance_scaler * relevance_output_sum
 
     print("layer norm relevance_input", relevance_input.sum())
+
+    assert torch.allclose(relevance_output.sum(), relevance_input.sum(), atol=1e-3)
 
     return relevance_input, None, None, None
 
@@ -130,7 +132,7 @@ class LayerNormAlpha1Beta0(Function):
         return _backward_alpha_beta(1.0, 0.0, ctx, relevance_output)
 
 layer_norm = {
-        "gradient":             NotImplementedError,
+        "gradient":             F.layer_norm,
         "epsilon":              NotImplementedError,
         "gamma":                NotImplementedError,
         "gamma+epsilon":        NotImplementedError,

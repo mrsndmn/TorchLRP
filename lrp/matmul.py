@@ -1,13 +1,13 @@
 import torch
-from .functional import residual
+from .functional import matmul
 
-class Residual(torch.nn.Softmax):
+class MatMul(torch.nn.Softmax):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.rule = "gradient"
 
-    def forward(self, input1, input2, **kwargs):
-        return residual[self.rule](input1, input2)
+    def forward(self, input1, input2, rule="alpha1beta0", **kwargs):
+        return matmul[self.rule](input1, input2)
 
     @classmethod
     def from_torch(cls, *args):

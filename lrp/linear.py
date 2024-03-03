@@ -2,9 +2,12 @@ import torch
 from .functional import linear
 
 class Linear(torch.nn.Linear):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rule = "gradient"
+
     def forward(self, input, *args, **kwargs):
-        rule = "alpha1beta0"
-        return linear[rule](input, self.weight, self.bias)
+        return linear[self.rule](input, self.weight, self.bias)
 
     @classmethod
     def from_torch(cls, lin):
