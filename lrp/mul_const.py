@@ -1,7 +1,8 @@
 import torch
+import torch.nn as nn
 from .functional import mul_const
 
-class MulConst(torch.nn.Softmax):
+class MulConst(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.rule = "gradient"

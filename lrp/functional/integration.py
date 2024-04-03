@@ -58,9 +58,12 @@ def lrp_modification_module(nn_module, rule):
     print("lrp modify", nn_module)
 
     if isinstance(nn_module, nn.Linear):
-        return LRPLinear.from_torch(nn_module)
+        return LRPLinear.from_torch(nn_module, rule)
     elif isinstance(nn_module, nn.LayerNorm):
-        return LRPLayerNorm.from_torch(nn_module)
+        return LRPLayerNorm.from_torch(nn_module, rule)
+    elif isinstance(nn_module, nn.Softmax):
+        # return nn.Identity
+        return LRPSoftmax.from_torch(nn_module, rule)
     elif isinstance(nn_module, (LRPResidual, LRPMul, LRPMulConst, LRPMatMul, LRPAddConst)):
         nn_module.rule = rule
         return nn_module
@@ -71,9 +74,6 @@ def lrp_modification_module(nn_module, rule):
     elif isinstance(nn_module, (nn.ReLU, nn.Dropout, nn.SiLU, nn.Sigmoid, nn.GELU)):
 
         return LRPBackwardNoopModule(nn_module)
-    elif isinstance(nn_module, nn.Softmax):
-        # return nn.Identity
-        return LRPSoftmax.from_torch(nn_module)
     elif isinstance(nn_module, nn.ModuleList):
         return nn.ModuleList([ lrp_modification_module(module_list_item, rule=rule) for module_list_item in nn_module ])
     else:
@@ -108,7 +108,9 @@ def convert_module(model, rule='alpha1beta0'):
 
     for attribute_name in get_nested_nn_modules(model):
         attribute_value = getattr(model, attribute_name)
-        setattr(model, attribute_name, lrp_modification_module(attribute_value, rule=rule))
+        modified_module = lrp_modification_module(attribute_value, rule=rule)
+        print("lrp modification: original module", type(attribute_value), "modified_module", type(modified_module))
+        setattr(model, attribute_name, modified_module)
 
     for extra_field in EXTRA_TORCH_TENSOR_OPERATION_FIELDS:
         if hasattr(model, extra_field):

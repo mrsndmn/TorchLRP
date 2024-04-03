@@ -1,7 +1,8 @@
 import torch
+import torch.nn as nn
 from .functional import matmul
 
-class MatMul(torch.nn.Softmax):
+class MatMul(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.rule = "gradient"
